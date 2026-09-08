@@ -1,0 +1,3 @@
+name = "utility_tools"
+version = "1.0.0"
+main = "plugin.py"

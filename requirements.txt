@@ -1,0 +1,11 @@
+# NcatBot framework
+ncatbot
+
+# HTTP requests used by AI, weather, subscription and utility plugins
+requests>=2.31,<3
+
+# YAML configuration parsing
+PyYAML>=6.0,<7
+
+# EPIC free games API client
+uapi
