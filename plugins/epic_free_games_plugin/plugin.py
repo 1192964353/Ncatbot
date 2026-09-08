@@ -1,25 +1,11 @@
 from ncatbot.plugin import NcatBotPlugin
-from uapi import UapiClient
 from ncatbot.types import MessageArray
 from ncatbot.core import registrar
 from ncatbot.event.qq import GroupMessageEvent, PrivateMessageEvent
 import datetime
 import asyncio
-from pathlib import Path
-
-import yaml
-
-
-
-def load_config():
-    config_path = Path(__file__).resolve().parents[2] / "config.yaml"
-    with config_path.open("r", encoding="utf-8") as file:
-        return yaml.safe_load(file) or {}
-
-
-config = load_config()
-client = UapiClient(config["apis"]["uapi"]["base_url"])
-
+import json
+from urllib.request import urlopen
 
 class EpicFreeGamesPlugin(NcatBotPlugin):
     async def on_load(self):
@@ -67,7 +53,12 @@ class EpicFreeGamesPlugin(NcatBotPlugin):
         await event.reply(await self.get_free_games())
 
     async def get_free_games(self):
-        result = await asyncio.to_thread(client.game.get_game_epic_free)
+        try:
+            result = await asyncio.to_thread(self._fetch_free_games)
+        except Exception as exc:
+            self.logger.warning("获取 EPIC 免费游戏失败: %s", exc)
+            result = {}
+
         msg = MessageArray()
         msg.add_text("《EPIC 本周免费游戏》\n")
         msg.add_text("\n")
@@ -77,4 +68,11 @@ class EpicFreeGamesPlugin(NcatBotPlugin):
                 msg.add_text(f"{game.get('link')}\n")
                 msg.add_image(game.get('cover'))
                 msg.add_text("------------------------------\n")
+        else:
+            msg.add_text("暂时无法获取 EPIC 免费游戏信息，请稍后再试。")
         return msg
+
+    @staticmethod
+    def _fetch_free_games() -> dict:
+        with urlopen("https://uapis.cn/api/v1/game/epic-free", timeout=15) as response:
+            return json.load(response)
