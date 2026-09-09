@@ -95,7 +95,11 @@ class ReminderPlugin(NcatBotPlugin):
 
     @registrar.qq.on_group_command(".提醒列表", ignore_case=True)
     async def list_group_reminders(self, event: GroupMessageEvent):
-        items = [item for item in self.reminders if item["target"] == str(event.group_id)]
+        group_id = str(event.group_id)
+        items = [
+            item for item in self.reminders
+            if item.get("kind") == "group" and item.get("target") == group_id
+        ]
         if not items:
             await event.reply("当前没有待处理提醒。")
             return
@@ -114,7 +118,11 @@ class ReminderPlugin(NcatBotPlugin):
         before = len(self.reminders)
         self.reminders = [
             item for item in self.reminders
-            if not (item["id"] == reminder_id and item["target"] == target)
+            if not (
+                item.get("kind") == "group"
+                and item.get("id") == reminder_id
+                and item.get("target") == target
+            )
         ]
         self._save()
         await event.reply("已取消提醒。" if len(self.reminders) < before else "没有找到这个提醒。")
