@@ -1,0 +1,51 @@
+# 字节码和缓存
+__pycache__/
+*.py[cod]
+*.so
+*.pyc
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.iml
+*.swp
+
+# 日志和临时文件
+*.log
+*.tmp
+*.pid
+*.crash
+guild1*
+data/
+
+# 密钥和配置文件（包含敏感信息）
+.env
+config.local.yaml
+config.yaml
+*.key
+*.pem
+
+# 数据库文件
+*.db
+*.sqlite3
+*.sqlite
+
+# 输出文件
+/dist/
+/build/
+*.egg-info/
+.eggs/
+pdf/
+stock/
+
+
+# 测试和覆盖率
+.coverage
+.pytest_cache/
+.tox/
+htmlcov/

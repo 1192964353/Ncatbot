@@ -1,0 +1,10 @@
+name = "JmComicPlugin"
+version = "0.1.0"
+main = "plugin.py"
+author = "FunEnn"
+description = "下载禁漫本子并发送 PDF/ZIP 文件"
+entry_class = "JmComicPlugin"
+pip_dependencies = ["jmcomic", "img2pdf"]
+
+[dependencies]
+

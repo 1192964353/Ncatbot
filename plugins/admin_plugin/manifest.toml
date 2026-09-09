@@ -1,0 +1,9 @@
+name = "admin_plugin"
+version = "0.1.0"
+main = "plugin.py"
+author = "admin"
+description = "NcatBot 模板插件 — 发送 hello 回复 hi (QQ)"
+entry_class = "AdminPlugin"
+pip_dependencies = []
+
+[dependencies]

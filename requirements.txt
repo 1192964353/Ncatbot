@@ -9,3 +9,13 @@ PyYAML>=6.0,<7
 
 # EPIC free games API client
 uapi
+
+aiohttp
+
+requests
+cryptography
+
+jmcomic
+img2pdf
+
+aiohttp>=3.8.0
