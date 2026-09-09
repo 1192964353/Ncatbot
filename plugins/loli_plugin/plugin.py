@@ -52,7 +52,13 @@ class LoliconPlugin(NcatBotPlugin):
         try:
             timeout = aiohttp.ClientTimeout(total=10, connect=3)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as response:
+            # + 新增请求头
+                headers = {
+                    "Referer": "https://www.pixiv.net/",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+                # + 修改 session.get，添加 headers 和 ssl 参数
+                async with session.get(url, headers=headers, ssl=False) as response:
                     if response.status == 200:
                         content = await response.read()
                         if len(content) > 1000:
@@ -65,6 +71,9 @@ class LoliconPlugin(NcatBotPlugin):
                             }
                             self._save_cache_index()
                             return cache_path
+                    else:
+                        # + 增加状态码日志，方便排查
+                        self.logger.warning(f"下载失败，状态码: {response.status}")
         except Exception as e:
             self.logger.error(f"下载图片异常: {url}, 错误: {e}")
         return None
