@@ -287,20 +287,15 @@ class LoliconPlugin(NcatBotPlugin):
                 # ncatbot5 内部可能会自动处理协议前缀，这里直接传本地绝对路径
                 msg_array.add_image(str(path.absolute()))
                 
-            try:
-                # 使用用户提供的 API 方法发送
-                if isinstance(event, GroupMessageEvent):
-                    await self.api.qq.post_group_array_msg(group_id=event.group_id, msg=msg_array)
-                elif isinstance(event, PrivateMessageEvent):
-                    await self.api.qq.post_private_array_msg(user_id=event.user_id, msg=msg_array)
-                else:
-                    # 回退到 reply
-                    await event.reply(rtf=msg_array)
-                    
+            # 使用封装的发送方法（含重试和错误分类）
+            success, send_err = await self._post_array_msg(event, msg_array)
+            if success:
                 total_sent += len(batch)
-            except Exception as e:
-                self.logger.error(f"发送图片失败: {e}")
+            else:
+                self.logger.error(f"发送图片失败，原因: {send_err}")
                 upload_fail_count += len(batch)
+                # 记录上传失败原因以供汇总
+                record_fail(send_err or "send_exception")
 
             if i + batch_size < len(valid_paths):
                 await asyncio.sleep(0.5)
@@ -321,6 +316,9 @@ class LoliconPlugin(NcatBotPlugin):
             "network": "网络连接异常",
             "content_invalid": "图片内容异常",
             "exception": "未知错误",
+            "send_timeout": "发送超时",
+            "send_api_1200": "平台 API 超时（1200）",
+            "send_exception": "发送失败",
         }
         parts = []
         for reason, count in fail_reasons.items():
@@ -330,6 +328,36 @@ class LoliconPlugin(NcatBotPlugin):
                 label = labels.get(reason, reason)
             parts.append(f"{label} x{count}")
         return "、".join(parts) if parts else "未知原因"
+
+    async def _post_array_msg(self, event: MessageEvent, msg_array: MessageArray, retries: int = 3) -> "tuple[bool, Optional[str]]":
+        """发送消息的封装：带短重试，返回 (success, error_code)。"""
+        delay = 0.8
+        last_err = None
+        for attempt in range(retries + 1):
+            try:
+                if isinstance(event, GroupMessageEvent):
+                    await self.api.qq.post_group_array_msg(group_id=event.group_id, msg=msg_array)
+                elif isinstance(event, PrivateMessageEvent):
+                    await self.api.qq.post_private_array_msg(user_id=event.user_id, msg=msg_array)
+                else:
+                    await event.reply(rtf=msg_array)
+                return True, None
+            except Exception as e:
+                # 解析常见超时 / 平台返回码日志
+                err_str = str(e)
+                self.logger.error(f"发送图片异常（尝试 {attempt+1}/{retries+1}）: {err_str}")
+                if '1200' in err_str:
+                    last_err = 'send_api_1200'
+                elif 'timeout' in err_str.lower() or 'timeout' in err_str:
+                    last_err = 'send_timeout'
+                else:
+                    last_err = 'send_exception'
+
+                if attempt < retries:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                    continue
+                return False, last_err
 
 
     @registrar.qq.on_command("/清理缓存", "/loli_clear", ignore_case=True)
