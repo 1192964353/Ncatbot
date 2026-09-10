@@ -23,13 +23,28 @@ news_image_url = config["apis"]["urls"]["daily_news_image"]
 
 class NewsPlugin(NcatBotPlugin):
     async def on_load(self):
-        self.logger.debug(f"{self.name} 已加载")
-        self.add_scheduled_task("push_news", interval="8:00")
+        if self.add_scheduled_task("push_news", interval="9:00"):
+            self.logger.info("每日新闻定时任务已注册，将在每天 9:00 执行")
+        else:
+            self.logger.error("每日新闻定时任务注册失败")
 
     async def push_news(self):
-        for group_id in await self._get_group_ids():
-            await self.api.qq.post_group_array_msg(group_id=group_id, msg=await self.get_news())
+        group_ids = await self._get_group_ids()
+        if not group_ids:
+            self.logger.warning("每日新闻未发送：未获取到可推送的群组")
+            return
+
+        self.logger.info("开始向 %d 个群组推送每日新闻", len(group_ids))
+        message = await self.get_news()
+        sent_count = 0
+        for group_id in group_ids:
+            try:
+                await self.api.qq.post_group_array_msg(group_id=group_id, msg=message)
+                sent_count += 1
+            except Exception:
+                self.logger.exception("向群组 %s 推送每日新闻失败", group_id)
             await asyncio.sleep(1)
+        self.logger.info("每日新闻推送完成：成功 %d/%d 个群组", sent_count, len(group_ids))
 
     async def _get_group_ids(self):
         get_group_list = getattr(self.api.qq, "get_group_list", None)
@@ -39,7 +54,12 @@ class NewsPlugin(NcatBotPlugin):
         try:
             result = await get_group_list()
             groups = result.get("data", result) if isinstance(result, dict) else result
-            return [str(item["group_id"]) for item in groups if isinstance(item, dict) and item.get("group_id")]
+            if not isinstance(groups, list):
+                self.logger.warning("获取群列表返回了非列表数据：%s", type(groups).__name__)
+                return []
+            group_ids = [str(item["group_id"]) for item in groups if isinstance(item, dict) and item.get("group_id")]
+            self.logger.info("获取到 %d 个群组用于每日新闻推送", len(group_ids))
+            return group_ids
         except Exception:
             self.logger.exception("Failed to get group list for daily news")
             return []

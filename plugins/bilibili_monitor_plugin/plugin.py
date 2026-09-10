@@ -124,7 +124,7 @@ class BilibiliMonitorPlugin(NcatBotPlugin):
 
     async def on_load(self):
         self.logger.info("Bilibili monitor plugin loaded")
-        self.add_scheduled_task("check_new_updates", interval=f"{self.check_interval}m")
+        self.add_scheduled_task("check_bilibili_updates", interval=f"{self.check_interval}m", callback=self.check_new_updates)
 
     async def check_new_updates(self):
         try:
@@ -161,7 +161,7 @@ class BilibiliMonitorPlugin(NcatBotPlugin):
                     self.state[up_id]["updated_at"] = latest.get("time")
                     self._save_state()
         except Exception as exc:
-            self.logger.exception("Scheduled task 'check_new_updates' failed: %s", exc)
+            self.logger.exception("Scheduled task 'check_bilibili_updates' failed: %s", exc)
 
     def _fetch_json_sync(self, url: str) -> Dict[str, Any]:
         headers = {
