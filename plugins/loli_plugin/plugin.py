@@ -101,11 +101,14 @@ class LoliconPlugin(NcatBotPlugin):
     ) -> "tuple[List[Dict], Optional[str]]":
         """调用 Lolicon API，返回 (图片数据列表, 失败原因)，成功且有结果时失败原因为 None"""
         api_url = "https://api.lolicon.app/setu/v2"
-        params = {"r18": r18, "num": count, "size": "regular"}
+        # 支持传递多个同名 query 参数（多个 tag）
         if not tags:
             tags = ["萝莉"]
+        # 使用 list[tuple] 以便生成重复的 `tag=...` 参数
+        params = [("r18", r18), ("num", count), ("size", "regular")]
         for tag in tags:
-            params["tag"] = tag
+            if tag:
+                params.append(("tag", tag))
         try:
             timeout = aiohttp.ClientTimeout(total=15, connect=5)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -118,11 +121,46 @@ class LoliconPlugin(NcatBotPlugin):
                     if error_msg:
                         self.logger.warning(f"Lolicon API 返回错误: {error_msg}")
                         return [], "api_error"
-                    result = data.get("data", [])[:count]
+                    raw_list = data.get("data", [])
+                    # 为支持客户端的 AND 语义：先请求较多条目以提高命中率，再在客户端过滤
+                    request_limit = min(30, max(count, count * 3))
+                    result = raw_list[:request_limit]
+
+                    def _normalize_tags_field(item) -> List[str]:
+                        t = item.get("tags") or item.get("tag") or item.get("tags", [])
+                        if isinstance(t, str):
+                            # 按空白或逗号切分
+                            parts = [p.strip().lower() for p in re.split(r"[\s,]+", t) if p.strip()]
+                            return parts
+                        if isinstance(t, list):
+                            return [str(p).strip().lower() for p in t]
+                        return []
+
+                    import re
+
+                    # 执行 AND 过滤：图片必须包含所有请求的标签（大小写不敏感）
+                    wanted = [str(x).strip().lower() for x in (tags or []) if x]
+                    if wanted:
+                        filtered = []
+                        for item in result:
+                            item_tags = _normalize_tags_field(item)
+                            # 如果没有返回 tag 列表，则保守认为不匹配
+                            if not item_tags:
+                                continue
+                            matched_all = True
+                            for w in wanted:
+                                # 允许子串匹配（更宽松），例如用户输入的短 tag
+                                if not any(w in it for it in item_tags):
+                                    matched_all = False
+                                    break
+                            if matched_all:
+                                filtered.append(item)
+                        result = filtered
+
                     if not result:
                         # API 正常响应但未匹配到结果，通常是 tag 不存在或组合无结果
                         return [], "no_result"
-                    return result, None
+                    return result[:count], None
         except asyncio.TimeoutError:
             self.logger.error("调用 Lolicon API 超时")
             return [], "timeout"
