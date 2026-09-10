@@ -8,6 +8,7 @@ import yaml
 import requests
 import os
 from pathlib import Path
+import time
 
 
 
@@ -47,17 +48,34 @@ class NewsPlugin(NcatBotPlugin):
         self.logger.info("每日新闻推送完成：成功 %d/%d 个群组", sent_count, len(group_ids))
 
     async def _get_group_ids(self):
+        # 尝试两种常见位置：`api.qq.get_group_list` 或 `api.qq.query.get_group_list`
         get_group_list = getattr(self.api.qq, "get_group_list", None)
         if get_group_list is None:
-            self.logger.warning("当前 API 不支持获取群列表，跳过每日新闻定时推送")
+            q = getattr(self.api.qq, "query", None)
+            get_group_list = getattr(q, "get_group_list", None) if q is not None else None
+        if get_group_list is None:
+            self.logger.error("当前 API 不支持获取群列表 (get_group_list)，无法获取目标群组")
             return []
+
         try:
             result = await get_group_list()
             groups = result.get("data", result) if isinstance(result, dict) else result
             if not isinstance(groups, list):
                 self.logger.warning("获取群列表返回了非列表数据：%s", type(groups).__name__)
                 return []
-            group_ids = [str(item["group_id"]) for item in groups if isinstance(item, dict) and item.get("group_id")]
+
+            group_ids = []
+            for item in groups:
+                gid = None
+                if isinstance(item, dict):
+                    gid = item.get("group_id") or item.get("id")
+                else:
+                    gid = getattr(item, "group_id", None) or getattr(item, "id", None)
+                if gid is None:
+                    # 有些实现可能使用其他字段名，跳过无法识别的条目
+                    continue
+                group_ids.append(str(gid))
+
             self.logger.info("获取到 %d 个群组用于每日新闻推送", len(group_ids))
             return group_ids
         except Exception:

@@ -32,14 +32,32 @@ class EpicFreeGamesPlugin(NcatBotPlugin):
             )
 
     async def _get_group_ids(self):
+        # 兼容两种位置：api.qq.get_group_list 或 api.qq.query.get_group_list
         get_group_list = getattr(self.api.qq, "get_group_list", None)
+        if get_group_list is None:
+            q = getattr(self.api.qq, "query", None)
+            get_group_list = getattr(q, "get_group_list", None) if q is not None else None
         if get_group_list is None:
             self.logger.warning("当前 API 不支持获取群列表，跳过 EPIC 定时推送")
             return []
+
         try:
             result = await get_group_list()
             groups = result.get("data", result) if isinstance(result, dict) else result
-            return [str(item["group_id"]) for item in groups if isinstance(item, dict) and item.get("group_id")]
+            if not isinstance(groups, list):
+                self.logger.warning("获取群列表返回了非列表数据：%s", type(groups).__name__)
+                return []
+
+            ids = []
+            for item in groups:
+                gid = None
+                if isinstance(item, dict):
+                    gid = item.get("group_id") or item.get("id")
+                else:
+                    gid = getattr(item, "group_id", None) or getattr(item, "id", None)
+                if gid is not None:
+                    ids.append(str(gid))
+            return ids
         except Exception:
             self.logger.exception("Failed to get group list for epic free games")
             return []
