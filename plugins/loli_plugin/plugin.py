@@ -51,7 +51,7 @@ class LoliconPlugin(NcatBotPlugin):
             return cache_path, None
 
         try:
-            timeout = aiohttp.ClientTimeout(total=10, connect=3)
+            timeout = aiohttp.ClientTimeout(total=15, connect=10)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 headers = {
                     "Referer": "https://www.pixiv.net/",
