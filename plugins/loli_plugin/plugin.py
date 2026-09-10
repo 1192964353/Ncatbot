@@ -190,17 +190,21 @@ class LoliconPlugin(NcatBotPlugin):
         """发送随机二次元图片命令"""
         args = event.raw_message.split()
         count = 1
-        tag = "萝莉"
+        tags: List[str] = []
         if len(args) > 1:
             try:
                 count = int(args[1])
+                tags = args[2:]
             except ValueError:
-                tag = args[1]
-        if len(args) > 2:
-            tag = args[2]
+                tags = args[1:]
+
+        # 过滤空标签并回退默认
+        tags = [t for t in tags if t]
+        if not tags:
+            tags = ["萝莉"]
 
         count = max(1, min(10, count))
-        images_data, error_code = await self._call_lolicon_api(count=count, r18=0, tags=[tag])
+        images_data, error_code = await self._call_lolicon_api(count=count, r18=0, tags=tags)
 
         if not images_data:
             await event.reply(text=self._api_error_message(error_code))
@@ -213,17 +217,19 @@ class LoliconPlugin(NcatBotPlugin):
         """发送 R18 二次元图片命令（仅限私聊）"""
         args = event.raw_message.split()
         count = 1
-        tag = ""
+        tags: List[str] = []
         if len(args) > 1:
             try:
                 count = int(args[1])
+                tags = args[2:]
             except ValueError:
-                tag = args[1]
-        if len(args) > 2:
-            tag = args[2]
+                tags = args[1:]
+
+        tags = [t for t in tags if t]
+        if not tags:
+            tags = ["萝莉"]
 
         count = max(1, min(5, count))
-        tags = [tag] if tag else ["萝莉"]
         images_data, error_code = await self._call_lolicon_api(count=count, r18=1, tags=tags)
 
         if not images_data:
