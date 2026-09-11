@@ -247,6 +247,12 @@ class LoliconPlugin(NcatBotPlugin):
     async def _send_images(
         self, event: MessageEvent, images_data: List[Dict], blocked_count: int = 0
     ):
+        image_tags = []
+        for index, image in enumerate(images_data, start=1):
+            tags = self._normalize_tags_field(image)
+            image_tags.append(f"第{index}张: {', '.join(tags) if tags else '无标签'}")
+        self.logger.info("本次发送图片的标签：%s", "；".join(image_tags))
+
         urls = [
             img.get("urls", {}).get("regular", "")
             for img in images_data
@@ -292,6 +298,8 @@ class LoliconPlugin(NcatBotPlugin):
             
             # 构造 MessageArray
             msg_array = MessageArray()
+            if blocked_count > 0:
+                msg_array.add_text(f"已屏蔽 {blocked_count} 张 AI 图片\n")
             for path in batch:
                 # ncatbot5 内部可能会自动处理协议前缀，这里直接传本地绝对路径
                 msg_array.add_image(str(path.absolute()))
