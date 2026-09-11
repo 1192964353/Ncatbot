@@ -24,7 +24,7 @@ news_image_url = config["apis"]["urls"]["daily_news_image"]
 
 class NewsPlugin(NcatBotPlugin):
     async def on_load(self):
-        if self.add_scheduled_task("push_news", interval="9:00"):
+        if self.add_scheduled_task("push_news", interval='09:00'):
             self.logger.info("每日新闻定时任务已注册，将在每天 9:00 执行")
         else:
             self.logger.error("每日新闻定时任务注册失败")
