@@ -10,14 +10,12 @@ from urllib.request import urlopen
 class EpicFreeGamesPlugin(NcatBotPlugin):
     async def on_load(self):
         self.logger.debug(f"{self.name} 已加载")
-        self.add_scheduled_task("epic_free_games", interval="09:30")
+        self.add_scheduled_task("epic_free_games", interval="15:10")
 
     async def epic_free_games(self):
         try:
             now = datetime.datetime.now()
             if now.weekday() != 4:
-                return
-            if now.hour != 9 or now.minute != 30:
                 return
 
             msg = await self.get_free_games()
