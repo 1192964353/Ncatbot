@@ -288,8 +288,8 @@ class LoliconPlugin(NcatBotPlugin):
             await event.reply(text=f"所有图片下载失败：{self._format_fail_reasons(fail_reasons)}")
             return
 
-        # 分批发送，每批最多 5 张
-        batch_size = min(5, len(valid_paths))
+        # 每张图片单独发送，避免多图消息体过大触发 NapCat API 1200 超时
+        batch_size = 1
         total_sent = 0
         upload_fail_count = 0
 
