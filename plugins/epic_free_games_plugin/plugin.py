@@ -10,7 +10,7 @@ from urllib.request import urlopen
 class EpicFreeGamesPlugin(NcatBotPlugin):
     async def on_load(self):
         self.logger.debug(f"{self.name} 已加载")
-        self.add_scheduled_task("epic_free_games", interval="9:30")
+        self.add_scheduled_task("epic_free_games", interval="09:30")
 
     async def epic_free_games(self):
         try:
