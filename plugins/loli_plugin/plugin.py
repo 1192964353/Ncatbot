@@ -10,12 +10,14 @@ import json
 import asyncio
 import hashlib
 import time
+import re
 from typing import List, Dict, Optional
 
 
 class LoliconPlugin(NcatBotPlugin):
     name = "Lolicon"
     version = "1.0.0"
+    blocked_tags = {"ai","AI","Ai"}
 
     async def on_load(self):
         self.cache_dir = Path("plugins/Lolicon/cache")
@@ -98,78 +100,78 @@ class LoliconPlugin(NcatBotPlugin):
 
     async def _call_lolicon_api(
         self, count: int = 1, r18: int = 0, tags: Optional[List[str]] = None
-    ) -> "tuple[List[Dict], Optional[str]]":
-        """调用 Lolicon API，返回 (图片数据列表, 失败原因)，成功且有结果时失败原因为 None"""
+    ) -> "tuple[List[Dict], Optional[str], int]":
+        """循环查询并过滤图片，返回 (图片列表, 失败原因, 屏蔽数量)。"""
         api_url = "https://api.lolicon.app/setu/v2"
-        # 支持传递多个同名 query 参数（多个 tag）
         if not tags:
             tags = ["萝莉"]
-        # 使用 list[tuple] 以便生成重复的 `tag=...` 参数
-        params = [("r18", r18), ("num", count), ("size", "regular")]
-        for tag in tags:
-            if tag:
-                params.append(("tag", tag))
+
+        wanted = [str(tag).strip().lower() for tag in tags if tag]
+        request_count = min(30, max(count, count * 3))
+        blocked_count = 0
+        collected = []
+        seen_urls = set()
+
         try:
             timeout = aiohttp.ClientTimeout(total=15, connect=5)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(api_url, params=params) as response:
-                    if response.status != 200:
-                        self.logger.warning(f"Lolicon API 返回异常状态码: {response.status}")
-                        return [], f"http_{response.status}"
-                    data = await response.json()
-                    error_msg = data.get("error") or ""
-                    if error_msg:
-                        self.logger.warning(f"Lolicon API 返回错误: {error_msg}")
-                        return [], "api_error"
-                    raw_list = data.get("data", [])
-                    # 为支持客户端的 AND 语义：先请求较多条目以提高命中率，再在客户端过滤
-                    request_limit = min(30, max(count, count * 3))
-                    result = raw_list[:request_limit]
+                for _ in range(5):
+                    params = [("r18", r18), ("num", request_count), ("size", "regular")]
+                    for tag in tags:
+                        if tag:
+                            params.append(("tag", tag))
 
-                    def _normalize_tags_field(item) -> List[str]:
-                        t = item.get("tags") or item.get("tag") or item.get("tags", [])
-                        if isinstance(t, str):
-                            # 按空白或逗号切分
-                            parts = [p.strip().lower() for p in re.split(r"[\s,]+", t) if p.strip()]
-                            return parts
-                        if isinstance(t, list):
-                            return [str(p).strip().lower() for p in t]
-                        return []
+                    async with session.get(api_url, params=params) as response:
+                        if response.status != 200:
+                            self.logger.warning(f"Lolicon API 返回异常状态码: {response.status}")
+                            return collected, f"http_{response.status}", blocked_count
+                        data = await response.json()
+                        error_msg = data.get("error") or ""
+                        if error_msg:
+                            self.logger.warning(f"Lolicon API 返回错误: {error_msg}")
+                            return collected, "api_error", blocked_count
 
-                    import re
-
-                    # 执行 AND 过滤：图片必须包含所有请求的标签（大小写不敏感）
-                    wanted = [str(x).strip().lower() for x in (tags or []) if x]
-                    if wanted:
-                        filtered = []
-                        for item in result:
-                            item_tags = _normalize_tags_field(item)
-                            # 如果没有返回 tag 列表，则保守认为不匹配
-                            if not item_tags:
+                        for item in data.get("data", [])[:request_count]:
+                            item_tags = self._normalize_tags_field(item)
+                            ai_type = str(item.get("aiType", ""))
+                            if ai_type == "2" or any(
+                                blocked in item_tags for blocked in self.blocked_tags
+                            ):
+                                blocked_count += 1
                                 continue
-                            matched_all = True
-                            for w in wanted:
-                                # 允许子串匹配（更宽松），例如用户输入的短 tag
-                                if not any(w in it for it in item_tags):
-                                    matched_all = False
-                                    break
-                            if matched_all:
-                                filtered.append(item)
-                        result = filtered
+                            if not item_tags or any(
+                                not any(w in item_tag for item_tag in item_tags)
+                                for w in wanted
+                            ):
+                                continue
+                            image_url = item.get("urls", {}).get("regular")
+                            if image_url and image_url not in seen_urls:
+                                seen_urls.add(image_url)
+                                collected.append(item)
+                                if len(collected) >= count:
+                                    return collected[:count], None, blocked_count
 
-                    if not result:
-                        # API 正常响应但未匹配到结果，通常是 tag 不存在或组合无结果
-                        return [], "no_result"
-                    return result[:count], None
+                if not collected:
+                    return [], "no_result", blocked_count
+                return collected[:count], None, blocked_count
         except asyncio.TimeoutError:
             self.logger.error("调用 Lolicon API 超时")
-            return [], "timeout"
+            return collected, "timeout", blocked_count
         except aiohttp.ClientError as e:
             self.logger.error(f"调用 Lolicon API 网络错误: {e}")
-            return [], "network"
+            return collected, "network", blocked_count
         except Exception as e:
             self.logger.error(f"调用 API 异常: {e}")
-            return [], "exception"
+            return collected, "exception", blocked_count
+
+    @staticmethod
+    def _normalize_tags_field(item) -> List[str]:
+        tags = item.get("tags") or item.get("tag") or []
+        if isinstance(tags, str):
+            return [tag.strip().lower() for tag in re.split(r"[\s,]+", tags) if tag.strip()]
+        if isinstance(tags, list):
+            return [str(tag).strip().lower() for tag in tags]
+        return []
 
     def _api_error_message(self, error_code: Optional[str]) -> str:
         """将 API 错误码转换为易懂的提示文案"""
@@ -204,13 +206,15 @@ class LoliconPlugin(NcatBotPlugin):
             tags = ["萝莉"]
 
         count = max(1, min(10, count))
-        images_data, error_code = await self._call_lolicon_api(count=count, r18=0, tags=tags)
+        images_data, error_code, blocked_count = await self._call_lolicon_api(
+            count=count, r18=0, tags=tags
+        )
 
         if not images_data:
             await event.reply(text=self._api_error_message(error_code))
             return
 
-        await self._send_images(event, images_data)
+        await self._send_images(event, images_data, blocked_count)
 
     @registrar.qq.on_private_command("/r18", ignore_case=True)
     async def r18_cmd(self, event: PrivateMessageEvent):
@@ -230,15 +234,19 @@ class LoliconPlugin(NcatBotPlugin):
             tags = ["萝莉"]
 
         count = max(1, min(5, count))
-        images_data, error_code = await self._call_lolicon_api(count=count, r18=1, tags=tags)
+        images_data, error_code, blocked_count = await self._call_lolicon_api(
+            count=count, r18=1, tags=tags
+        )
 
         if not images_data:
             await event.reply(text=self._api_error_message(error_code))
             return
 
-        await self._send_images(event, images_data)
+        await self._send_images(event, images_data, blocked_count)
 
-    async def _send_images(self, event: MessageEvent, images_data: List[Dict]):
+    async def _send_images(
+        self, event: MessageEvent, images_data: List[Dict], blocked_count: int = 0
+    ):
         urls = [
             img.get("urls", {}).get("regular", "")
             for img in images_data
@@ -248,7 +256,8 @@ class LoliconPlugin(NcatBotPlugin):
             await event.reply(text="没有可用的图片链接")
             return
 
-        await event.reply(text="正在获取图片，请稍候...")
+        blocked_text = f"，已屏蔽 {blocked_count} 张 AI 图片" if blocked_count else ""
+        await event.reply(text=f"正在获取图片，请稍候{blocked_text}...")
         results = await self._download_images_concurrent(urls)
 
         # 过滤有效的图片路径，并统计下载失败原因
@@ -301,12 +310,16 @@ class LoliconPlugin(NcatBotPlugin):
                 await asyncio.sleep(0.5)
 
         download_fail_count = sum(fail_reasons.values())
+        detail_parts = []
+        if blocked_count > 0:
+            detail_parts.append(f"已屏蔽 {blocked_count} 张 AI 图片")
         if download_fail_count > 0 or upload_fail_count > 0:
-            detail_parts = []
             if download_fail_count > 0:
                 detail_parts.append(f"下载失败 {download_fail_count} 张（{self._format_fail_reasons(fail_reasons)}）")
             if upload_fail_count > 0:
                 detail_parts.append(f"上传失败 {upload_fail_count} 张")
+            await event.reply(text=f"发送完成！成功: {total_sent} 张；{'；'.join(detail_parts)}")
+        elif blocked_count > 0:
             await event.reply(text=f"发送完成！成功: {total_sent} 张；{'；'.join(detail_parts)}")
 
     def _format_fail_reasons(self, fail_reasons: Dict[str, int]) -> str:
