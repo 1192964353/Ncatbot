@@ -352,7 +352,7 @@ class LoliconPlugin(NcatBotPlugin):
                 record_fail(send_err or "send_exception")
 
             if i + batch_size < len(valid_paths):
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(2.0)
 
         download_fail_count = sum(fail_reasons.values())
         detail_parts = []
@@ -408,7 +408,17 @@ class LoliconPlugin(NcatBotPlugin):
             if success:
                 return True, None
             if attempt < retries:
-                await asyncio.sleep(1.5 * (attempt + 1))
+                if last_err == "send_api_1200":
+                    delay = 3.0 * (attempt + 1)
+                    self.logger.warning(
+                        "图片发送遇到 API 1200，等待 %.1f 秒后重试（第 %d/%d 次）",
+                        delay,
+                        attempt + 2,
+                        retries + 1,
+                    )
+                else:
+                    delay = 1.5 * (attempt + 1)
+                await asyncio.sleep(delay)
         return False, last_err
 
     async def _post_array_msg(self, event: MessageEvent, msg_array: MessageArray, retries: int = 3) -> "tuple[bool, Optional[str]]":
