@@ -1,0 +1,9 @@
+name = "console_chat"
+version = "1.0.0"
+main = "plugin.py"
+author = "NcatBot"
+description = "通过服务器控制台向 QQ 群或用户发送文本消息"
+entry_class = "ConsoleChatPlugin"
+pip_dependencies = []
+
+[dependencies]

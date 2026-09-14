@@ -174,7 +174,23 @@ class LoliconPlugin(NcatBotPlugin):
                             self.logger.warning(f"Lolicon API 返回错误: {error_msg}")
                             return collected, "api_error", blocked_count
 
-                        for item in data.get("data", [])[:request_count]:
+                        raw_items = data.get("data", [])
+                        if not isinstance(raw_items, list):
+                            self.logger.warning(
+                                "Lolicon API data 不是列表：%s",
+                                type(raw_items).__name__,
+                            )
+                            return collected, "api_error", blocked_count
+
+                        self.logger.info(
+                            "Lolicon API 本轮返回 %d 张，目标 %d 张，已收集 %d 张",
+                            len(raw_items),
+                            count,
+                            len(collected),
+                        )
+                        for item in raw_items[:request_count]:
+                            if not isinstance(item, dict):
+                                continue
                             item_tags = self._normalize_tags_field(item)
                             ai_type = str(item.get("aiType", ""))
                             if ai_type == "2" or any(
@@ -196,6 +212,12 @@ class LoliconPlugin(NcatBotPlugin):
 
                 if not collected:
                     return [], "no_result", blocked_count
+                self.logger.info(
+                    "Lolicon API 查询结束：目标 %d 张，实际收集 %d 张，屏蔽 AI %d 张",
+                    count,
+                    len(collected),
+                    blocked_count,
+                )
                 return collected[:count], None, blocked_count
         except asyncio.TimeoutError:
             self.logger.error("调用 Lolicon API 超时")
@@ -330,6 +352,13 @@ class LoliconPlugin(NcatBotPlugin):
         if not valid_paths:
             await event.reply(text=f"所有图片下载失败：{self._format_fail_reasons(fail_reasons)}")
             return
+
+        self.logger.info(
+            "Lolicon 图片下载完成：请求 %d 张，成功 %d 张，失败 %d 张",
+            len(urls),
+            len(valid_paths),
+            len(urls) - len(valid_paths),
+        )
 
         # 每张图片单独发送，避免多图消息体过大触发 NapCat API 1200 超时
         batch_size = 1
