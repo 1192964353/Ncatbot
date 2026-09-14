@@ -52,39 +52,82 @@ class LoliconPlugin(NcatBotPlugin):
         if cache_path.exists():
             return cache_path, None
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=15, connect=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                headers = {
-                    "Referer": "https://www.pixiv.net/",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                }
-                async with session.get(url, headers=headers, ssl=False) as response:
-                    if response.status == 200:
-                        content = await response.read()
-                        if len(content) > 1000:
-                            with open(cache_path, "wb") as f:
-                                f.write(content)
-                            self.cache_index[url] = {
-                                "path": str(cache_path),
-                                "timestamp": time.time(),
-                                "size": len(content),
-                            }
-                            self._save_cache_index()
-                            return cache_path, None
-                        self.logger.warning(f"下载内容异常（过小）: {url}, 大小: {len(content)} 字节")
-                        return None, "content_invalid"
-                    self.logger.warning(f"下载失败，状态码: {response.status}, url: {url}")
-                    return None, f"http_{response.status}"
-        except asyncio.TimeoutError:
-            self.logger.error(f"下载图片超时: {url}")
-            return None, "timeout"
-        except aiohttp.ClientError as e:
-            self.logger.error(f"下载图片网络错误: {url}, 错误: {e}")
-            return None, "network"
-        except Exception as e:
-            self.logger.error(f"下载图片异常: {url}, 错误: {e}")
-            return None, "exception"
+        timeout = aiohttp.ClientTimeout(total=30, connect=15, sock_read=25)
+        headers = {
+            "Referer": "https://www.pixiv.net/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+        max_attempts = 3
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    async with session.get(url, headers=headers, ssl=False) as response:
+                        if response.status == 200:
+                            content = await response.read()
+                            if len(content) > 1000:
+                                with open(cache_path, "wb") as f:
+                                    f.write(content)
+                                self.cache_index[url] = {
+                                    "path": str(cache_path),
+                                    "timestamp": time.time(),
+                                    "size": len(content),
+                                }
+                                self._save_cache_index()
+                                return cache_path, None
+
+                            self.logger.warning(
+                                "下载内容异常（过小），第 %d/%d 次: %s, 大小: %d 字节",
+                                attempt,
+                                max_attempts,
+                                url,
+                                len(content),
+                            )
+                            if attempt == max_attempts:
+                                return None, "content_invalid"
+                        elif response.status >= 500:
+                            self.logger.warning(
+                                "下载服务端错误，第 %d/%d 次: %s, 状态码: %d",
+                                attempt,
+                                max_attempts,
+                                url,
+                                response.status,
+                            )
+                            if attempt == max_attempts:
+                                return None, f"http_{response.status}"
+                        else:
+                            self.logger.warning(
+                                "下载失败，状态码: %d, url: %s",
+                                response.status,
+                                url,
+                            )
+                            return None, f"http_{response.status}"
+                except asyncio.TimeoutError:
+                    self.logger.warning(
+                        "下载图片超时，第 %d/%d 次: %s",
+                        attempt,
+                        max_attempts,
+                        url,
+                    )
+                    if attempt == max_attempts:
+                        return None, "timeout"
+                except aiohttp.ClientError as e:
+                    self.logger.warning(
+                        "下载图片网络错误，第 %d/%d 次: %s, 错误: %s",
+                        attempt,
+                        max_attempts,
+                        url,
+                        e,
+                    )
+                    if attempt == max_attempts:
+                        return None, "network"
+                except Exception as e:
+                    self.logger.error(f"下载图片异常: {url}, 错误: {e}")
+                    return None, "exception"
+
+                await asyncio.sleep(1.5 * attempt)
+
+        return None, "exception"
 
     async def _download_images_concurrent(
         self, urls: List[str]
@@ -296,16 +339,10 @@ class LoliconPlugin(NcatBotPlugin):
         for i in range(0, len(valid_paths), batch_size):
             batch = valid_paths[i : i + batch_size]
             
-            # 构造 MessageArray
-            msg_array = MessageArray()
-            if blocked_count > 0:
-                msg_array.add_text(f"已屏蔽 {blocked_count} 张 AI 图片\n")
-            for path in batch:
-                # ncatbot5 内部可能会自动处理协议前缀，这里直接传本地绝对路径
-                msg_array.add_image(str(path.absolute()))
-                
-            # 使用封装的发送方法（含重试和错误分类）
-            success, send_err = await self._post_array_msg(event, msg_array)
+            # 每次重试都会重新构造消息对象，避免复用已被 NapCat 处理过的上传消息。
+            success, send_err = await self._post_image(
+                event, batch[0], blocked_count
+            )
             if success:
                 total_sent += len(batch)
             else:
@@ -315,7 +352,7 @@ class LoliconPlugin(NcatBotPlugin):
                 record_fail(send_err or "send_exception")
 
             if i + batch_size < len(valid_paths):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)
 
         download_fail_count = sum(fail_reasons.values())
         detail_parts = []
@@ -349,6 +386,30 @@ class LoliconPlugin(NcatBotPlugin):
                 label = labels.get(reason, reason)
             parts.append(f"{label} x{count}")
         return "、".join(parts) if parts else "未知原因"
+
+    async def _post_image(
+        self,
+        event: MessageEvent,
+        path: Path,
+        blocked_count: int = 0,
+        retries: int = 3,
+    ) -> "tuple[bool, Optional[str]]":
+        """发送单张本地图片；每次重试重新构造消息，降低 C1200 影响。"""
+        last_err = None
+        for attempt in range(retries + 1):
+            msg_array = MessageArray()
+            if blocked_count > 0:
+                msg_array.add_text(f"已屏蔽 {blocked_count} 张 AI 图片\n")
+            msg_array.add_image(str(path.absolute()))
+
+            success, last_err = await self._post_array_msg(
+                event, msg_array, retries=0
+            )
+            if success:
+                return True, None
+            if attempt < retries:
+                await asyncio.sleep(1.5 * (attempt + 1))
+        return False, last_err
 
     async def _post_array_msg(self, event: MessageEvent, msg_array: MessageArray, retries: int = 3) -> "tuple[bool, Optional[str]]":
         """发送消息的封装：带短重试，返回 (success, error_code)。"""
