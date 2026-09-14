@@ -403,7 +403,11 @@ class LoliconPlugin(NcatBotPlugin):
             msg_array.add_image(str(path.absolute()))
 
             success, last_err = await self._post_array_msg(
-                event, msg_array, retries=0
+                event,
+                msg_array,
+                retries=0,
+                attempt_number=attempt + 1,
+                total_attempts=retries + 1,
             )
             if success:
                 return True, None
@@ -421,7 +425,14 @@ class LoliconPlugin(NcatBotPlugin):
                 await asyncio.sleep(delay)
         return False, last_err
 
-    async def _post_array_msg(self, event: MessageEvent, msg_array: MessageArray, retries: int = 3) -> "tuple[bool, Optional[str]]":
+    async def _post_array_msg(
+        self,
+        event: MessageEvent,
+        msg_array: MessageArray,
+        retries: int = 3,
+        attempt_number: Optional[int] = None,
+        total_attempts: Optional[int] = None,
+    ) -> "tuple[bool, Optional[str]]":
         """发送消息的封装：带短重试，返回 (success, error_code)。"""
         delay = 0.8
         last_err = None
@@ -437,7 +448,11 @@ class LoliconPlugin(NcatBotPlugin):
             except Exception as e:
                 # 解析常见超时 / 平台返回码日志
                 err_str = str(e)
-                self.logger.error(f"发送图片异常（尝试 {attempt+1}/{retries+1}）: {err_str}")
+                current_attempt = attempt_number or attempt + 1
+                max_attempts = total_attempts or retries + 1
+                self.logger.error(
+                    f"发送图片异常（尝试 {current_attempt}/{max_attempts}）: {err_str}"
+                )
                 if '1200' in err_str:
                     last_err = 'send_api_1200'
                 elif 'timeout' in err_str.lower() or 'timeout' in err_str:
