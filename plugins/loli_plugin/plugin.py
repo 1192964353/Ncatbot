@@ -496,7 +496,7 @@ class LoliconPlugin(NcatBotPlugin):
                 return False, last_err
 
 
-    @registrar.qq.on_command(".清理缓存", ".loli clear", ignore_case=True)
+    @registrar.qq.on_command(".清理缓存", ".loli_clear", ignore_case=True)
     async def clear_cache_cmd(self, event: MessageEvent):
         """清理图片缓存命令"""
         await event.reply(text="正在清理清理缓存，请稍候...")
