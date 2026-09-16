@@ -1,6 +1,7 @@
 """通过服务器控制台向 QQ 群或用户发送文本消息。"""
 
 import asyncio
+import sys
 from typing import Any
 
 from ncatbot.core import registrar
@@ -14,6 +15,12 @@ class ConsoleChatPlugin(NcatBotPlugin):
 
     async def on_load(self):
         self._console_running = True
+        if not sys.stdin or not sys.stdin.isatty():
+            self._console_running = False
+            self.logger.warning(
+                "当前进程没有交互式控制台，跳过 console_chat 输入监听；QQ 插件仍会正常工作"
+            )
+            return
         self._console_task = asyncio.create_task(self._console_loop())
         self.logger.info(
             "控制台聊天已启动：输入 help 查看帮助，输入 quit 停止控制台监听"

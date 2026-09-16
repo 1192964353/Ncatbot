@@ -20,7 +20,7 @@ class LoliconPlugin(NcatBotPlugin):
     blocked_tags = {"ai","AI","Ai"}
 
     async def on_load(self):
-        self.cache_dir = Path("plugins/Lolicon/cache")
+        self.cache_dir = Path("plugins/loli_plugin/cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_index_file = self.cache_dir / "cache_index.json"
         self.cache_index = self._load_cache_index()
@@ -496,7 +496,7 @@ class LoliconPlugin(NcatBotPlugin):
                 return False, last_err
 
 
-    @registrar.qq.on_command("/清理缓存", "/loli_clear", ignore_case=True)
+    @registrar.qq.on_command(".清理缓存", ".loli clear", ignore_case=True)
     async def clear_cache_cmd(self, event: MessageEvent):
         """清理图片缓存命令"""
         await event.reply(text="正在清理清理缓存，请稍候...")
