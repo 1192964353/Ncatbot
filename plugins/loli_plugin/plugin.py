@@ -360,8 +360,8 @@ class LoliconPlugin(NcatBotPlugin):
             len(urls) - len(valid_paths),
         )
 
-        # 每张图片单独发送，避免多图消息体过大触发 NapCat API 1200 超时
-        batch_size = 1
+        # 每条消息合并三张图片，减少群消息频率占用
+        batch_size = 3
         total_sent = 0
         upload_fail_count = 0
 
@@ -369,9 +369,7 @@ class LoliconPlugin(NcatBotPlugin):
             batch = valid_paths[i : i + batch_size]
             
             # 每次重试都会重新构造消息对象，避免复用已被 NapCat 处理过的上传消息。
-            success, send_err = await self._post_image(
-                event, batch[0], blocked_count
-            )
+            success, send_err = await self._post_image(event, batch, blocked_count)
             if success:
                 total_sent += len(batch)
             else:
@@ -419,17 +417,18 @@ class LoliconPlugin(NcatBotPlugin):
     async def _post_image(
         self,
         event: MessageEvent,
-        path: Path,
+        paths: List[Path],
         blocked_count: int = 0,
         retries: int = 3,
     ) -> "tuple[bool, Optional[str]]":
-        """发送单张本地图片；每次重试重新构造消息，降低 C1200 影响。"""
+        """合并发送一批本地图片；每次重试重新构造消息，降低 C1200 影响。"""
         last_err = None
         for attempt in range(retries + 1):
             msg_array = MessageArray()
             if blocked_count > 0:
                 msg_array.add_text(f"已屏蔽 {blocked_count} 张 AI 图片\n")
-            msg_array.add_image(str(path.absolute()))
+            for path in paths:
+                msg_array.add_image(str(path.absolute()))
 
             success, last_err = await self._post_array_msg(
                 event,
